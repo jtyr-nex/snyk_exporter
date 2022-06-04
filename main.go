@@ -28,6 +28,7 @@ const (
 	upgradeableLabel  = "upgradeable"
 	patchableLabel    = "patchable"
 	monitoredLabel    = "monitored"
+	targetLabel       = "target"
 )
 
 var (
@@ -36,7 +37,7 @@ var (
 			Name: "snyk_vulnerabilities_total",
 			Help: "Gauge of Snyk vulnerabilities",
 		},
-		[]string{organizationLabel, projectLabel, issueTypeLabel, issueTitleLabel, severityLabel, ignoredLabel, upgradeableLabel, patchableLabel, monitoredLabel},
+		[]string{organizationLabel, targetLabel, projectLabel, issueTypeLabel, issueTitleLabel, severityLabel, ignoredLabel, upgradeableLabel, patchableLabel, monitoredLabel},
 	)
 )
 
@@ -56,6 +57,7 @@ func main() {
 	snykAPIToken := flags.Flag("snyk.api-token", "Snyk API token").Required().String()
 	snykInterval := flags.Flag("snyk.interval", "Polling interval for requesting data from Snyk API in seconds").Short('i').Default("600").Int()
 	snykOrganizations := flags.Flag("snyk.organization", "Snyk organization ID to scrape projects from (can be repeated for multiple organizations)").Strings()
+	snykTargets := flags.Flag("snyk.target", "Snyk target/repo name to scrape projects from (can be repeated for multiple targets)").Strings()
 	requestTimeout := flags.Flag("snyk.timeout", "Timeout for requests against Snyk API").Default("10").Int()
 	listenAddress := flags.Flag("web.listen-address", "Address on which to expose metrics.").Default(":9532").String()
 	log.AddFlags(flags)
@@ -67,6 +69,12 @@ func main() {
 		log.Infof("Starting Snyk exporter for organization '%s'", strings.Join(*snykOrganizations, ","))
 	} else {
 		log.Info("Starting Snyk exporter for all organization for token")
+	}
+
+	if len(*snykTargets) != 0 {
+		log.Infof("Starting Snyk exporter for targets '%s'", strings.Join(*snykTargets, ","))
+	} else {
+		log.Info("Starting Snyk exporter for all targets")
 	}
 
 	prometheus.MustRegister(vulnerabilityGauge)
@@ -139,7 +147,7 @@ func main() {
 		defer wg.Done()
 		log.Info("Snyk API scraper starting")
 		defer log.Info("Snyk API scraper stopped")
-		err := runAPIPolling(ctx, *snykAPIURL, *snykAPIToken, *snykOrganizations, secondDuration(*snykInterval), secondDuration(*requestTimeout))
+		err := runAPIPolling(ctx, *snykAPIURL, *snykAPIToken, *snykOrganizations, *snykTargets, secondDuration(*snykInterval), secondDuration(*requestTimeout))
 		if err != nil {
 			componentFailed <- fmt.Errorf("snyk api scraper: %w", err)
 		}
@@ -159,7 +167,7 @@ func secondDuration(seconds int) time.Duration {
 	return time.Duration(seconds) * time.Second
 }
 
-func runAPIPolling(ctx context.Context, url, token string, organizationIDs []string, requestInterval, requestTimeout time.Duration) error {
+func runAPIPolling(ctx context.Context, url, token string, organizationIDs []string, targets []string, requestInterval, requestTimeout time.Duration) error {
 	client := client{
 		httpClient: &http.Client{
 			Timeout: requestTimeout,
@@ -174,7 +182,7 @@ func runAPIPolling(ctx context.Context, url, token string, organizationIDs []str
 	log.Infof("Running Snyk API scraper for organizations: %v", strings.Join(organizationNames(organizations), ", "))
 
 	// kick off a poll right away to get metrics available right after startup
-	pollAPI(ctx, &client, organizations)
+	pollOrgsAndTargets(organizations, targets, ctx, client)
 
 	ticker := time.NewTicker(requestInterval)
 	defer ticker.Stop()
@@ -183,35 +191,46 @@ func runAPIPolling(ctx context.Context, url, token string, organizationIDs []str
 		case <-ctx.Done():
 			return nil
 		case <-ticker.C:
-			pollAPI(ctx, &client, organizations)
+			pollOrgsAndTargets(organizations, targets, ctx, client)
+		}
+	}
+}
+
+// loop through provided orgs and targets
+func pollOrgsAndTargets(organizations []org, targets []string, ctx context.Context, client client) {
+	for _, organization := range organizations {
+		log.Infof("Collecting for organization '%s'", organization.Name)
+		if len(targets) == 0 {
+			pollAPI(ctx, &client, organization, "")
+		} else {
+			for _, target := range targets {
+				log.Infof("Collecting for target starting with '%s'", target)
+				pollAPI(ctx, &client, organization, target)
+			}
 		}
 	}
 }
 
 // pollAPI collects data from provided organizations and registers them in the
 // prometheus registry.
-func pollAPI(ctx context.Context, client *client, organizations []org) {
+func pollAPI(ctx context.Context, client *client, organization org, target string) {
 	var gaugeResults []gaugeResult
-	for _, organization := range organizations {
-		log.Infof("Collecting for organization '%s'", organization.Name)
-		results, err := collect(ctx, client, organization)
-		if err != nil {
-			log.With("error", err).
-				With("organzationName", organization.Name).
-				With("organzationId", organization.ID).
-				Errorf("Collection failed for organization '%s': %v", organization.Name, err)
-			continue
-		}
-		log.Infof("Recorded %d results for organization '%s'", len(results), organization.Name)
-		gaugeResults = append(gaugeResults, results...)
-		// stop right away in case of the context being cancelled. This ensures that
-		// we don't wait for a complete collect run for all organizations before
-		// stopping.
-		select {
-		case <-ctx.Done():
-			return
-		default:
-		}
+	results, err := collect(ctx, client, organization, target)
+	if err != nil {
+		log.With("error", err).
+			With("organzationName", organization.Name).
+			With("organzationId", organization.ID).
+			Errorf("Collection failed for organization '%s': %v", organization.Name, err)
+	}
+	log.Infof("Recorded %d results for organization '%s'", len(results), organization.Name)
+	gaugeResults = append(gaugeResults, results...)
+	// stop right away in case of the context being cancelled. This ensures that
+	// we don't wait for a complete collect run for all organizations before
+	// stopping.
+	select {
+	case <-ctx.Done():
+		return
+	default:
 	}
 	log.Infof("Exposing %d results as metrics", len(gaugeResults))
 	scrapeMutex.Lock()
@@ -265,20 +284,21 @@ func register(results []gaugeResult) {
 	vulnerabilityGauge.Reset()
 	for _, r := range results {
 		for _, result := range r.results {
-			vulnerabilityGauge.WithLabelValues(r.organization, r.project, result.issueType, result.title, result.severity, strconv.FormatBool(result.ignored), strconv.FormatBool(result.upgradeable), strconv.FormatBool(result.patchable), strconv.FormatBool(r.isMonitored)).Set(float64(result.count))
+			vulnerabilityGauge.WithLabelValues(r.organization, r.target, r.project, result.issueType, result.title, result.severity, strconv.FormatBool(result.ignored), strconv.FormatBool(result.upgradeable), strconv.FormatBool(result.patchable), strconv.FormatBool(r.isMonitored)).Set(float64(result.count))
 		}
 	}
 }
 
 type gaugeResult struct {
 	organization string
+	target       string
 	project      string
 	isMonitored  bool
 	results      []aggregateResult
 }
 
-func collect(ctx context.Context, client *client, organization org) ([]gaugeResult, error) {
-	projects, err := client.getProjects(organization.ID)
+func collect(ctx context.Context, client *client, organization org, target string) ([]gaugeResult, error) {
+	projects, err := client.getProjects(organization.ID, target)
 	if err != nil {
 		return nil, fmt.Errorf("get projects for organization: %w", err)
 	}
@@ -295,6 +315,7 @@ func collect(ctx context.Context, client *client, organization org) ([]gaugeResu
 		results := aggregateIssues(issues.Issues)
 		gaugeResults = append(gaugeResults, gaugeResult{
 			organization: organization.Name,
+			target:       strings.Split(project.Name, "(")[0],
 			project:      project.Name,
 			results:      results,
 			isMonitored:  project.IsMonitored,
