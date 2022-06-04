@@ -34,18 +34,8 @@ func (c *client) getOrganizations() (orgsResponse, error) {
 	return orgs, nil
 }
 
-func (c *client) getProjects(organization string, target string) (projectsResponse, error) {
-	postData := projectPostData{
-		Filters: projectFilters{
-			Name: target,
-		},
-	}
-	var reader bytes.Buffer
-	err := json.NewEncoder(&reader).Encode(&postData)
-	if err != nil {
-		return projectsResponse{}, err
-	}
-	req, err := http.NewRequest(http.MethodPost, fmt.Sprintf("%s/org/%s/projects", c.baseURL, organization), &reader)
+func (c *client) getProjects(organization string) (projectsResponse, error) {
+	req, err := http.NewRequest(http.MethodGet, fmt.Sprintf("%s/org/%s/projects", c.baseURL, organization), nil)
 	if err != nil {
 		return projectsResponse{}, err
 	}
@@ -92,7 +82,6 @@ func (c *client) getIssues(organizationID, projectID string) (issuesResponse, er
 
 func (c *client) do(req *http.Request) (*http.Response, error) {
 	req.Header.Add("Authorization", fmt.Sprintf("token %s", c.token))
-	req.Header.Add("Content-Type", "application/json")
 	response, err := c.httpClient.Do(req)
 	if err != nil {
 		return nil, err
@@ -138,9 +127,9 @@ type projectOrg struct {
 }
 
 type project struct {
-	Name        string `json:"name,omitempty"`
-	ID          string `json:"id,omitempty"`
-	IsMonitored bool   `json:"isMonitored,omitempty"`
+	Name          string `json:"name,omitempty"`
+	ID            string `json:"id,omitempty"`
+	IsMonitored   bool   `json:"isMonitored,omitempty"`
 }
 
 type issuesResponse struct {
@@ -176,11 +165,4 @@ type issueFilters struct {
 	Types      []string `json:"types,omitempty"`
 	Ignored    bool     `json:"ignored,omitempty"`
 	Patched    bool     `json:"patched,omitempty"`
-}
-
-type projectPostData struct {
-	Filters projectFilters `json:"filters,omitempty"`
-}
-type projectFilters struct {
-	Name string `json:"name,omitempty"`
 }
