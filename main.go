@@ -198,40 +198,22 @@ func runAPIPolling(ctx context.Context, url, token string, organizationIDs []str
 
 // loop through provided orgs and targets
 func pollOrgsAndTargets(organizations []org, targets []string, ctx context.Context, client client) {
+	var gaugeResults []gaugeResult
 	for _, organization := range organizations {
 		log.Infof("Collecting for organization '%s'", organization.Name)
 		if len(targets) == 0 {
-			pollAPI(ctx, &client, organization, "")
+			gaugeResults = pollAPI(ctx, &client, organization, "", gaugeResults)
 		} else {
 			for _, target := range targets {
 				log.Infof("Collecting for target starting with '%s'", target)
-				pollAPI(ctx, &client, organization, target)
+				gaugeResults = pollAPI(ctx, &client, organization, target, gaugeResults)
 			}
 		}
 	}
+	registerMetrics(gaugeResults)
 }
 
-// pollAPI collects data from provided organizations and registers them in the
-// prometheus registry.
-func pollAPI(ctx context.Context, client *client, organization org, target string) {
-	var gaugeResults []gaugeResult
-	results, err := collect(ctx, client, organization, target)
-	if err != nil {
-		log.With("error", err).
-			With("organzationName", organization.Name).
-			With("organzationId", organization.ID).
-			Errorf("Collection failed for organization '%s': %v", organization.Name, err)
-	}
-	log.Infof("Recorded %d results for organization '%s'", len(results), organization.Name)
-	gaugeResults = append(gaugeResults, results...)
-	// stop right away in case of the context being cancelled. This ensures that
-	// we don't wait for a complete collect run for all organizations before
-	// stopping.
-	select {
-	case <-ctx.Done():
-		return
-	default:
-	}
+func registerMetrics(gaugeResults []gaugeResult) {
 	log.Infof("Exposing %d results as metrics", len(gaugeResults))
 	scrapeMutex.Lock()
 	register(gaugeResults)
@@ -239,6 +221,35 @@ func pollAPI(ctx context.Context, client *client, organization org, target strin
 	readyMutex.Lock()
 	ready = true
 	readyMutex.Unlock()
+}
+
+// pollAPI collects data from provided organizations and registers them in the
+// prometheus registry.
+func pollAPI(ctx context.Context, client *client, organization org, target string, gaugeResults []gaugeResult) []gaugeResult {
+	//var gaugeResults []gaugeResult
+	results, err := collect(ctx, client, organization, target)
+	if err != nil {
+		log.With("error", err).
+			With("organzationName", organization.Name).
+			With("organzationId", organization.ID).
+			Errorf("Collection failed for organization '%s': %v", organization.Name, err)
+		return nil
+	}
+	if target != "" {
+		log.Infof("Recorded %d results for organization '%s' and target '%v'", len(results), organization.Name, target)
+	} else {
+		log.Infof("Recorded %d results for organization '%s'", len(results), organization.Name)
+	}
+	gaugeResults = append(gaugeResults, results...)
+	// stop right away in case of the context being cancelled. This ensures that
+	// we don't wait for a complete collect run for all organizations before
+	// stopping.
+	select {
+	case <-ctx.Done():
+		return nil
+	default:
+	}
+	return gaugeResults
 }
 
 func organizationNames(orgs []org) []string {
@@ -315,7 +326,7 @@ func collect(ctx context.Context, client *client, organization org, target strin
 		results := aggregateIssues(issues.Issues)
 		gaugeResults = append(gaugeResults, gaugeResult{
 			organization: organization.Name,
-			target:       strings.Split(project.Name, "(")[0],
+			target:       strings.Split(project.Name, ":")[0],
 			project:      project.Name,
 			results:      results,
 			isMonitored:  project.IsMonitored,
