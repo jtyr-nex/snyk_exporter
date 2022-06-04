@@ -45,6 +45,8 @@ Flags:
   -i, --snyk.interval=600  Polling interval for requesting data from Snyk API in seconds
       --snyk.organization=SNYK.ORGANIZATION ...
                            Snyk organization ID to scrape projects from (can be repeated for multiple organizations)
+      --snyk.target=SNYK.TARGET ...  
+                           Snyk target/repo name to scrape projects from (can be repeated for multiple targets)
       --snyk.timeout=10    Timeout for requests against Snyk API
       --web.listen-address=":9532"
                            Address on which to expose metrics.
@@ -73,6 +75,7 @@ The interval can be configured as needed.
 The API results are aggregated and recorded on the `snyk_vulnerabiilities_total` metric with the following labels:
 
 - `organization` - The organization where the vulnerable project exists
+- `target` - The target/repo name of the vulnerable project
 - `project` - The project with a vulnerability
 - `severity` - The severity of the vulnerability, can be `critical`, `high`, `medium` and `low`
 - `issue_type` - The type of issue, e.g. `vuln`, `license`
@@ -85,10 +88,10 @@ The API results are aggregated and recorded on the `snyk_vulnerabiilities_total`
 Here is an example.
 
 ```
-snyk_vulnerabilities_total{organization="my-org",project="my-app",severity="critical",issue_type="vuln",issue_title="Remote Code Execution",ignored="false",upgradeable="false",patchable="false",monitored="true"} 1.0
-snyk_vulnerabilities_total{organization="my-org",project="my-app",severity="high",issue_type="vuln",issue_title="Privilege Escalation",ignored="false",upgradeable="false",patchable="false",monitored="true"} 1.0
-snyk_vulnerabilities_total{organization="my-org",project="my-app",severity="low",issue_type="vuln",issue_title="Sandbox (chroot) Escape",ignored="true",upgradeable="false",patchable="false",monitored="false"} 2.0
-snyk_vulnerabilities_total{organization="my-org",project="my-app",severity="medium",issue_type="license",issue_title="MPL-2.0 license",ignored="true",upgradeable="false",patchable="false",monitored="true"} 1
+snyk_vulnerabilities_total{organization="my-org",target="my-scm-org/repo",project="my-app",severity="critical",issue_type="vuln",issue_title="Remote Code Execution",ignored="false",upgradeable="false",patchable="false",monitored="true"} 1.0
+snyk_vulnerabilities_total{organization="my-org",target="my-scm-org/repo",project="my-app",severity="high",issue_type="vuln",issue_title="Privilege Escalation",ignored="false",upgradeable="false",patchable="false",monitored="true"} 1.0
+snyk_vulnerabilities_total{organization="my-org",target="my-scm-org/repo",project="my-app",severity="low",issue_type="vuln",issue_title="Sandbox (chroot) Escape",ignored="true",upgradeable="false",patchable="false",monitored="false"} 2.0
+snyk_vulnerabilities_total{organization="my-org",target="my-scm-org/repo",project="my-app",severity="medium",issue_type="license",issue_title="MPL-2.0 license",ignored="true",upgradeable="false",patchable="false",monitored="true"} 1
 ```
 
 # Build
