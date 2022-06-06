@@ -1,187 +1,396 @@
 package main
 
 import (
-	"bytes"
-	"encoding/json"
+	"context"
 	"fmt"
-	"io/ioutil"
 	"net/http"
-	"net/http/httputil"
+	"os"
+	"os/signal"
+	"strconv"
+	"strings"
+	"sync"
+	"syscall"
+	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/prometheus/common/log"
+	kingpin "gopkg.in/alecthomas/kingpin.v2"
 )
 
-type client struct {
-	httpClient *http.Client
-	token      string
-	baseURL    string
-}
+const (
+	projectLabel      = "project"
+	issueTypeLabel    = "issue_type"
+	issueTitleLabel   = "issue_title"
+	severityLabel     = "severity"
+	organizationLabel = "organization"
+	ignoredLabel      = "ignored"
+	upgradeableLabel  = "upgradeable"
+	patchableLabel    = "patchable"
+	monitoredLabel    = "monitored"
+	targetLabel       = "target"
+	projectTypeLabel  = "project_type"
+)
 
-func (c *client) getOrganizations() (orgsResponse, error) {
-	req, err := http.NewRequest(http.MethodGet, fmt.Sprintf("%s/orgs", c.baseURL), nil)
-	if err != nil {
-		return orgsResponse{}, err
-	}
-	response, err := c.do(req)
-	if err != nil {
-		return orgsResponse{}, err
-	}
-	var orgs orgsResponse
-	err = json.NewDecoder(response.Body).Decode(&orgs)
-	if err != nil {
-		return orgsResponse{}, err
-	}
-	return orgs, nil
-}
-
-func (c *client) getProjects(organization string, target string) (projectsResponse, error) {
-	postData := projectPostData{
-		Filters: projectFilters{
-			Name: target,
+var (
+	vulnerabilityGauge = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "snyk_vulnerabilities_total",
+			Help: "Gauge of Snyk vulnerabilities",
 		},
+		[]string{organizationLabel, targetLabel, projectLabel, projectTypeLabel, issueTypeLabel, issueTitleLabel, severityLabel, ignoredLabel, upgradeableLabel, patchableLabel, monitoredLabel},
+	)
+)
+
+var (
+	ready       = false
+	readyMutex  = &sync.RWMutex{}
+	scrapeMutex = &sync.RWMutex{}
+)
+
+var (
+	version = ""
+)
+
+func main() {
+	flags := kingpin.New("snyk_exporter", "Snyk exporter for Prometheus. Provide your Snyk API token and the organization(s) to scrape to expose Prometheus metrics.")
+	snykAPIURL := flags.Flag("snyk.api-url", "Snyk API URL").Default("https://snyk.io/api/v1").String()
+	snykAPIToken := flags.Flag("snyk.api-token", "Snyk API token").Required().String()
+	snykInterval := flags.Flag("snyk.interval", "Polling interval for requesting data from Snyk API in seconds").Short('i').Default("600").Int()
+	snykOrganizations := flags.Flag("snyk.organization", "Snyk organization ID to scrape projects from (can be repeated for multiple organizations)").Strings()
+	snykTargets := flags.Flag("snyk.target", "Snyk target/repo name to scrape projects from (can be repeated for multiple targets)").Strings()
+	requestTimeout := flags.Flag("snyk.timeout", "Timeout for requests against Snyk API").Default("10").Int()
+	listenAddress := flags.Flag("web.listen-address", "Address on which to expose metrics.").Default(":9532").String()
+	log.AddFlags(flags)
+	flags.HelpFlag.Short('h')
+	flags.Version(version)
+	kingpin.MustParse(flags.Parse(os.Args[1:]))
+
+	if len(*snykOrganizations) != 0 {
+		log.Infof("Starting Snyk exporter for organization '%s'", strings.Join(*snykOrganizations, ","))
+	} else {
+		log.Info("Starting Snyk exporter for all organization for token")
 	}
-	var reader bytes.Buffer
-	err := json.NewEncoder(&reader).Encode(&postData)
-	if err != nil {
-		return projectsResponse{}, err
+
+	if len(*snykTargets) != 0 {
+		log.Infof("Starting Snyk exporter for targets '%s'", strings.Join(*snykTargets, ","))
+	} else {
+		log.Info("Starting Snyk exporter for all targets")
 	}
-	req, err := http.NewRequest(http.MethodPost, fmt.Sprintf("%s/org/%s/projects", c.baseURL, organization), &reader)
-	if err != nil {
-		return projectsResponse{}, err
+
+	prometheus.MustRegister(vulnerabilityGauge)
+	http.Handle("/metrics", promhttp.InstrumentMetricHandler(
+		prometheus.DefaultRegisterer, http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+			scrapeMutex.RLock()
+			defer scrapeMutex.RUnlock()
+			promhttp.HandlerFor(prometheus.DefaultGatherer, promhttp.HandlerOpts{}).ServeHTTP(rw, r)
+		}),
+	))
+
+	http.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprintf(w, "healthy")
+	})
+
+	http.HandleFunc("/ready", func(w http.ResponseWriter, r *http.Request) {
+		readyMutex.RLock()
+		defer readyMutex.RUnlock()
+
+		if ready {
+			w.WriteHeader(http.StatusOK)
+		} else {
+			w.WriteHeader(http.StatusServiceUnavailable)
+		}
+
+		_, err := w.Write([]byte(strconv.FormatBool(ready)))
+		if err != nil {
+			log.With("error", err).Errorf("Failed to write ready response: %v", err)
+		}
+	})
+
+	// context used to stop worker components from signal or component failures
+	ctx, stop := context.WithCancel(context.Background())
+	defer stop()
+
+	// used to report errors from components
+	var exitCode int
+	componentFailed := make(chan error, 1)
+	var wg sync.WaitGroup
+
+	go func() {
+		log.Infof("Listening on %s", *listenAddress)
+		err := http.ListenAndServe(*listenAddress, nil)
+		if err != nil {
+			componentFailed <- fmt.Errorf("http listener stopped: %v", err)
+		}
+	}()
+
+	// Go routine responsible for starting shutdown sequence based of signals or
+	// component failures
+	sigs := make(chan os.Signal, 1)
+	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		select {
+		case sig := <-sigs:
+			log.Infof("Received os signal '%s'. Terminating...", sig)
+		case err := <-componentFailed:
+			if err != nil {
+				log.Errorf("Component failed: %v", err)
+				exitCode = 1
+			}
+		}
+		stop()
+	}()
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		log.Info("Snyk API scraper starting")
+		defer log.Info("Snyk API scraper stopped")
+		err := runAPIPolling(ctx, *snykAPIURL, *snykAPIToken, *snykOrganizations, *snykTargets, secondDuration(*snykInterval), secondDuration(*requestTimeout))
+		if err != nil {
+			componentFailed <- fmt.Errorf("snyk api scraper: %w", err)
+		}
+	}()
+
+	// wait for all components to stop
+	wg.Wait()
+	if exitCode != 0 {
+		log.Errorf("Snyk exporter exited with exit %d", exitCode)
+		os.Exit(exitCode)
+	} else {
+		log.Infof("Snyk exporter exited with exit 0")
 	}
-	response, err := c.do(req)
-	if err != nil {
-		return projectsResponse{}, err
-	}
-	var projects projectsResponse
-	err = json.NewDecoder(response.Body).Decode(&projects)
-	if err != nil {
-		return projectsResponse{}, err
-	}
-	return projects, nil
 }
 
-func (c *client) getIssues(organizationID, projectID string) (issuesResponse, error) {
-	postData := issuesPostData{
-		Filters: issueFilters{
-			Severities: []string{
-				"critical", "high", "medium", "low",
-			},
+func secondDuration(seconds int) time.Duration {
+	return time.Duration(seconds) * time.Second
+}
+
+func runAPIPolling(ctx context.Context, url, token string, organizationIDs []string, targets []string, requestInterval, requestTimeout time.Duration) error {
+	client := client{
+		httpClient: &http.Client{
+			Timeout: requestTimeout,
 		},
+		token:   token,
+		baseURL: url,
 	}
-	var reader bytes.Buffer
-	err := json.NewEncoder(&reader).Encode(&postData)
+	organizations, err := getOrganizations(&client, organizationIDs)
 	if err != nil {
-		return issuesResponse{}, err
+		return err
 	}
-	req, err := http.NewRequest(http.MethodPost, fmt.Sprintf("%s/org/%s/project/%s/aggregated-issues", c.baseURL, organizationID, projectID), &reader)
-	if err != nil {
-		return issuesResponse{}, err
+	log.Infof("Running Snyk API scraper for organizations: %v", strings.Join(organizationNames(organizations), ", "))
+
+	// kick off a poll right away to get metrics available right after startup
+	pollOrgsAndTargets(organizations, targets, ctx, client)
+
+	ticker := time.NewTicker(requestInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-ticker.C:
+			pollOrgsAndTargets(organizations, targets, ctx, client)
+		}
 	}
-	response, err := c.do(req)
-	if err != nil {
-		return issuesResponse{}, err
-	}
-	var issues issuesResponse
-	err = json.NewDecoder(response.Body).Decode(&issues)
-	if err != nil {
-		return issuesResponse{}, err
-	}
-	return issues, nil
 }
 
-func (c *client) do(req *http.Request) (*http.Response, error) {
-	req.Header.Add("Authorization", fmt.Sprintf("token %s", c.token))
-	req.Header.Add("Content-Type", "application/json")
-	response, err := c.httpClient.Do(req)
+// loop through provided orgs and targets
+func pollOrgsAndTargets(organizations []org, targets []string, ctx context.Context, client client) {
+	var gaugeResults []gaugeResult
+	for _, organization := range organizations {
+		log.Infof("Collecting for organization '%s'", organization.Name)
+		if len(targets) == 0 {
+			gaugeResults = pollAPI(ctx, &client, organization, "", gaugeResults)
+		} else {
+			for _, target := range targets {
+				log.Infof("Collecting for target starting with '%s'", target)
+				gaugeResults = pollAPI(ctx, &client, organization, target, gaugeResults)
+			}
+		}
+	}
+	registerMetrics(gaugeResults)
+}
+
+func registerMetrics(gaugeResults []gaugeResult) {
+	log.Infof("Exposing %d results as metrics", len(gaugeResults))
+	scrapeMutex.Lock()
+	register(gaugeResults)
+	scrapeMutex.Unlock()
+	readyMutex.Lock()
+	ready = true
+	readyMutex.Unlock()
+}
+
+// pollAPI collects data from provided organizations and registers them in the
+// prometheus registry.
+func pollAPI(ctx context.Context, client *client, organization org, target string, gaugeResults []gaugeResult) []gaugeResult {
+	//var gaugeResults []gaugeResult
+	results, err := collect(ctx, client, organization, target)
+	if err != nil {
+		log.With("error", err).
+			With("organzationName", organization.Name).
+			With("organzationId", organization.ID).
+			Errorf("Collection failed for organization '%s': %v", organization.Name, err)
+		return nil
+	}
+	if target != "" {
+		log.Infof("Recorded %d results for organization '%s' and target '%v'", len(results), organization.Name, target)
+	} else {
+		log.Infof("Recorded %d results for organization '%s'", len(results), organization.Name)
+	}
+	gaugeResults = append(gaugeResults, results...)
+	// stop right away in case of the context being cancelled. This ensures that
+	// we don't wait for a complete collect run for all organizations before
+	// stopping.
+	select {
+	case <-ctx.Done():
+		return nil
+	default:
+	}
+	return gaugeResults
+}
+
+func organizationNames(orgs []org) []string {
+	var names []string
+	for _, org := range orgs {
+		names = append(names, org.Name)
+	}
+	return names
+}
+
+func getOrganizations(client *client, organizationIDs []string) ([]org, error) {
+	orgsResponse, err := client.getOrganizations()
 	if err != nil {
 		return nil, err
 	}
-	if response.StatusCode != http.StatusOK {
-		body, err := ioutil.ReadAll(response.Body)
-		if err != nil {
-			log.Errorf("read body failed: %v", err)
-			body = []byte("failed to read body")
+	organizations := orgsResponse.Orgs
+	if len(organizationIDs) != 0 {
+		organizations = filterByIDs(orgsResponse.Orgs, organizationIDs)
+		if len(organizations) == 0 {
+			return nil, fmt.Errorf("no organizations match the filter: '%v'", strings.Join(organizationIDs, ","))
 		}
-		requestDump, err := httputil.DumpRequestOut(req, true)
-		if err != nil {
-			log.Debugf("Failed to dump request for logging")
-		} else {
-			log.Debugf("Failed request dump: %s", requestDump)
-		}
-		return nil, fmt.Errorf("request not OK: %s: body: %s", response.Status, body)
 	}
-	return response, nil
+	return organizations, nil
 }
 
-type orgsResponse struct {
-	Orgs []org `json:"orgs,omitempty"`
+func filterByIDs(organizations []org, ids []string) []org {
+	var filtered []org
+	for i := range organizations {
+		for _, id := range ids {
+			if organizations[i].ID == id {
+				filtered = append(filtered, organizations[i])
+			}
+		}
+	}
+	return filtered
 }
 
-type org struct {
-	ID    string `json:"id,omitempty"`
-	Name  string `json:"name,omitempty"`
-	Group *struct {
-		Name string `json:"name,omitempty"`
-		ID   string `json:"id,omitempty"`
-	} `json:"group,omitempty"`
+// register registers results in the vulnerbility gauge. To handle changing
+// flags, e.g. ignored, upgradeable the metric is cleared before setting new
+// values.
+// See https://github.com/lunarway/snyk_exporter/issues/21 for details.
+func register(results []gaugeResult) {
+	vulnerabilityGauge.Reset()
+	for _, r := range results {
+		for _, result := range r.results {
+			vulnerabilityGauge.WithLabelValues(r.organization, r.target, r.project, r.projectType, result.issueType, result.title, result.severity, strconv.FormatBool(result.ignored), strconv.FormatBool(result.upgradeable), strconv.FormatBool(result.patchable), strconv.FormatBool(r.isMonitored)).Set(float64(result.count))
+		}
+	}
 }
 
-type projectsResponse struct {
-	Org      projectOrg `json:"org,omitempty"`
-	Projects []project  `json:"projects,omitempty"`
+type gaugeResult struct {
+	organization string
+	target       string
+	project      string
+	projectType  string
+	isMonitored  bool
+	results      []aggregateResult
 }
 
-type projectOrg struct {
-	ID   string `json:"id,omitempty"`
-	Name string `json:"name,omitempty"`
+func collect(ctx context.Context, client *client, organization org, target string) ([]gaugeResult, error) {
+	projects, err := client.getProjects(organization.ID, target)
+	if err != nil {
+		return nil, fmt.Errorf("get projects for organization: %w", err)
+	}
+
+	var gaugeResults []gaugeResult
+	for _, project := range projects.Projects {
+		start := time.Now()
+		issues, err := client.getIssues(organization.ID, project.ID)
+		duration := time.Since(start)
+		if err != nil {
+			log.Errorf("Failed to get issues for organization %s (%s) and project %s (%s): duration %v:  %v", organization.Name, organization.ID, project.Name, project.ID, duration, err)
+			continue
+		}
+		results := aggregateIssues(issues.Issues)
+
+		var projectName string
+		if strings.Contains(project.Name, ":") {
+			projectName = strings.Split(project.Name, ":")[1]
+		} else {
+			projectName = project.Name
+		}
+
+		gaugeResults = append(gaugeResults, gaugeResult{
+			organization: organization.Name,
+			target:       strings.Split(project.Name, ":")[0],
+			project:      projectName,
+			projectType:  project.ProjectType,
+			results:      results,
+			isMonitored:  project.IsMonitored,
+		})
+		log.Debugf("Collected data in %v for %s %s", duration, project.ID, project.Name)
+		// stop right away in case of the context being cancelled. This ensures that
+		// we don't wait for a complete collect run for all projects before
+		// stopping.
+		select {
+		case <-ctx.Done():
+			return nil, nil
+		default:
+		}
+	}
+	return gaugeResults, nil
 }
 
-type project struct {
-	Name        string `json:"name,omitempty"`
-	ID          string `json:"id,omitempty"`
-	ProjectType string `json:"type,omitempty"`
-	IsMonitored bool   `json:"isMonitored,omitempty"`
+type aggregateResult struct {
+	issueType   string
+	title       string
+	severity    string
+	ignored     bool
+	upgradeable bool
+	patchable   bool
+	count       int
 }
 
-type issuesResponse struct {
-	Issues []issue `json:"issues,omitempty"`
+func aggregationKey(i issue) string {
+	return fmt.Sprintf("%s_%s_%s_%t_%t_%t", i.IssueData.Severity, i.IssueType, i.IssueData.Title, i.Ignored, i.FixInfo.Upgradeable, i.FixInfo.Patchable)
 }
 
-type issue struct {
-	ID        string    `json:"id,omitempty"`
-	IssueType string    `json:"issueType"`
-	IssueData issueData `json:"issueData,omitempty"`
-	Ignored   bool      `json:"isIgnored"`
-	FixInfo   fixInfo   `json:"fixInfo,omitempty"`
-}
+func aggregateIssues(issues []issue) []aggregateResult {
+	aggregateResults := make(map[string]aggregateResult)
 
-type issueData struct {
-	ID       string `json:"id,omitempty"`
-	Title    string `json:"title,omitempty"`
-	Severity string `json:"severity,omitempty"`
-}
-
-type fixInfo struct {
-	Upgradeable bool `json:"isUpgradable"`
-	Patchable   bool `json:"isPatchable"`
-}
-
-type license struct{}
-
-type issuesPostData struct {
-	Filters issueFilters `json:"filters,omitempty"`
-}
-type issueFilters struct {
-	Severities []string `json:"severities,omitempty"`
-	Types      []string `json:"types,omitempty"`
-	Ignored    bool     `json:"ignored,omitempty"`
-	Patched    bool     `json:"patched,omitempty"`
-}
-
-type projectPostData struct {
-	Filters projectFilters `json:"filters,omitempty"`
-}
-type projectFilters struct {
-	Name string `json:"name,omitempty"`
+	for _, issue := range issues {
+		aggregate, ok := aggregateResults[aggregationKey(issue)]
+		if !ok {
+			aggregate = aggregateResult{
+				issueType:   issue.IssueType,
+				title:       issue.IssueData.Title,
+				severity:    issue.IssueData.Severity,
+				count:       0,
+				ignored:     issue.Ignored,
+				upgradeable: issue.FixInfo.Upgradeable,
+				patchable:   issue.FixInfo.Patchable,
+			}
+		}
+		aggregate.count++
+		aggregateResults[aggregationKey(issue)] = aggregate
+	}
+	var output []aggregateResult
+	for i := range aggregateResults {
+		output = append(output, aggregateResults[i])
+	}
+	return output
 }
