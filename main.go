@@ -29,6 +29,7 @@ const (
 	patchableLabel    = "patchable"
 	monitoredLabel    = "monitored"
 	targetLabel       = "target"
+	projectTypeLabel  = "project_type"
 )
 
 var (
@@ -37,7 +38,7 @@ var (
 			Name: "snyk_vulnerabilities_total",
 			Help: "Gauge of Snyk vulnerabilities",
 		},
-		[]string{organizationLabel, targetLabel, projectLabel, issueTypeLabel, issueTitleLabel, severityLabel, ignoredLabel, upgradeableLabel, patchableLabel, monitoredLabel},
+		[]string{organizationLabel, targetLabel, projectLabel, projectTypeLabel, issueTypeLabel, issueTitleLabel, severityLabel, ignoredLabel, upgradeableLabel, patchableLabel, monitoredLabel},
 	)
 )
 
@@ -295,7 +296,7 @@ func register(results []gaugeResult) {
 	vulnerabilityGauge.Reset()
 	for _, r := range results {
 		for _, result := range r.results {
-			vulnerabilityGauge.WithLabelValues(r.organization, r.target, r.project, result.issueType, result.title, result.severity, strconv.FormatBool(result.ignored), strconv.FormatBool(result.upgradeable), strconv.FormatBool(result.patchable), strconv.FormatBool(r.isMonitored)).Set(float64(result.count))
+			vulnerabilityGauge.WithLabelValues(r.organization, r.target, r.project, r.projectType, result.issueType, result.title, result.severity, strconv.FormatBool(result.ignored), strconv.FormatBool(result.upgradeable), strconv.FormatBool(result.patchable), strconv.FormatBool(r.isMonitored)).Set(float64(result.count))
 		}
 	}
 }
@@ -304,6 +305,7 @@ type gaugeResult struct {
 	organization string
 	target       string
 	project      string
+	projectType  string
 	isMonitored  bool
 	results      []aggregateResult
 }
@@ -324,10 +326,19 @@ func collect(ctx context.Context, client *client, organization org, target strin
 			continue
 		}
 		results := aggregateIssues(issues.Issues)
+
+		var projectName string
+		if strings.Contains(project.Name, ":") {
+			projectName = strings.Split(project.Name, ":")[1]
+		} else {
+			projectName = project.Name
+		}
+
 		gaugeResults = append(gaugeResults, gaugeResult{
 			organization: organization.Name,
 			target:       strings.Split(project.Name, ":")[0],
-			project:      project.Name,
+			project:      projectName,
+			projectType:  project.ProjectType,
 			results:      results,
 			isMonitored:  project.IsMonitored,
 		})
