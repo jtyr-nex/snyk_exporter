@@ -327,17 +327,10 @@ func collect(ctx context.Context, client *client, organization org, target strin
 		}
 		results := aggregateIssues(issues.Issues)
 
-		var projectName string
-		if strings.Contains(project.Name, ":") {
-			projectName = strings.Split(project.Name, ":")[1]
-		} else {
-			projectName = project.Name
-		}
-
 		gaugeResults = append(gaugeResults, gaugeResult{
 			organization: organization.Name,
 			target:       strings.Split(project.Name, ":")[0],
-			project:      projectName,
+			project:      project.Name,
 			projectType:  project.ProjectType,
 			results:      results,
 			isMonitored:  project.IsMonitored,
