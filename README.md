@@ -77,6 +77,7 @@ The API results are aggregated and recorded on the `snyk_vulnerabiilities_total`
 - `organization` - The organization where the vulnerable project exists
 - `target` - The target/repo name of the vulnerable project
 - `project` - The project with a vulnerability
+- `project_type` - The type of the project (npm, maven, rubygems, etc.)
 - `severity` - The severity of the vulnerability, can be `critical`, `high`, `medium` and `low`
 - `issue_type` - The type of issue, e.g. `vuln`, `license`
 - `issue_title` - The issue title of the vulnerability, e.g. `Denial os Service (DoS)`. Can be the CVE if the vulnerability is not named by Snyk
