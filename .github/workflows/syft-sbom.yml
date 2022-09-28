@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  snyk_scans:
+  syft-sbom:
 
     runs-on: ubuntu-latest
 
