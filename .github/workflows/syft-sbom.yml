@@ -16,3 +16,5 @@ jobs:
         
     - name: Anchore SBOM Action
       uses: anchore/sbom-action@v0.12.0
+      with:
+         artifact_name: ${{ github.event.repository.name }}-spdx.json
