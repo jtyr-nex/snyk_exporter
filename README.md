@@ -14,7 +14,7 @@ Several pre-compiled binaries are available from the [releases page](https://git
 A docker image is also available on our Quay.io registry.
 
 ```
-docker run quay.io/lunarway/snyk_exporter --snyk.api-token <api-token>
+docker run grafana/snyk_exporter:latest --snyk.api-token <api-token>
 ```
 
 # Usage
