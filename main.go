@@ -19,6 +19,7 @@ import (
 )
 
 const (
+	idLabel           = "id"
 	projectLabel      = "project"
 	issueTypeLabel    = "issue_type"
 	issueTitleLabel   = "issue_title"
@@ -38,7 +39,7 @@ var (
 			Name: "snyk_vulnerabilities_total",
 			Help: "Gauge of Snyk vulnerabilities",
 		},
-		[]string{organizationLabel, targetLabel, projectLabel, projectTypeLabel, issueTypeLabel, issueTitleLabel, severityLabel, ignoredLabel, upgradeableLabel, patchableLabel, monitoredLabel},
+		[]string{idLabel, organizationLabel, targetLabel, projectLabel, projectTypeLabel, issueTypeLabel, issueTitleLabel, severityLabel, ignoredLabel, upgradeableLabel, patchableLabel, monitoredLabel},
 	)
 )
 
@@ -349,6 +350,7 @@ func collect(ctx context.Context, client *client, organization org, target strin
 }
 
 type aggregateResult struct {
+	id          string
 	issueType   string
 	title       string
 	severity    string
@@ -359,7 +361,7 @@ type aggregateResult struct {
 }
 
 func aggregationKey(i issue) string {
-	return fmt.Sprintf("%s_%s_%s_%t_%t_%t", i.IssueData.Severity, i.IssueType, i.IssueData.Title, i.Ignored, i.FixInfo.Upgradeable, i.FixInfo.Patchable)
+	return fmt.Sprintf("%s_%s_%s_%s_%t_%t_%t", i.ID, i.IssueData.Severity, i.IssueType, i.IssueData.Title, i.Ignored, i.FixInfo.Upgradeable, i.FixInfo.Patchable)
 }
 
 func aggregateIssues(issues []issue) []aggregateResult {
@@ -369,6 +371,7 @@ func aggregateIssues(issues []issue) []aggregateResult {
 		aggregate, ok := aggregateResults[aggregationKey(issue)]
 		if !ok {
 			aggregate = aggregateResult{
+				id:          issue.ID,
 				issueType:   issue.IssueType,
 				title:       issue.IssueData.Title,
 				severity:    issue.IssueData.Severity,
