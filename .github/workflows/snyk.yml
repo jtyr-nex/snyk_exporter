@@ -2,10 +2,10 @@ name: Snyk Monitor
 on:
  release:
    types: [published] 
-  push:
+ push:
     branches:
       - 'main' 
-  workflow_dispatch:
+ workflow_dispatch:
 
 jobs:
   snyk-scan-ci:
