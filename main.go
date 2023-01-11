@@ -330,11 +330,12 @@ func collect(ctx context.Context, client *client, organization org, target strin
 
 		gaugeResults = append(gaugeResults, gaugeResult{
 			organization: organization.Name,
-			target:       strings.Split(project.Name, ":")[0],
-			project:      project.Name,
-			projectType:  project.ProjectType,
-			results:      results,
-			isMonitored:  project.IsMonitored,
+			//target:       strings.Split(project.Name, ":")[0],
+			target:      project.Name,
+			project:     project.Name,
+			projectType: project.ProjectType,
+			results:     results,
+			isMonitored: project.IsMonitored,
 		})
 		log.Debugf("Collected data in %v for %s %s", duration, project.ID, project.Name)
 		// stop right away in case of the context being cancelled. This ensures that
