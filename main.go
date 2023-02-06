@@ -31,6 +31,7 @@ const (
 	monitoredLabel    = "monitored"
 	targetLabel       = "target"
 	projectTypeLabel  = "project_type"
+	cveLabel          = "cve"
 )
 
 var (
@@ -39,7 +40,7 @@ var (
 			Name: "snyk_vulnerabilities_total",
 			Help: "Gauge of Snyk vulnerabilities",
 		},
-		[]string{organizationLabel, targetLabel, projectLabel, projectTypeLabel, issueIdLabel, issueTypeLabel, issueTitleLabel, severityLabel, ignoredLabel, upgradeableLabel, patchableLabel, monitoredLabel},
+		[]string{organizationLabel, targetLabel, projectLabel, projectTypeLabel, issueIdLabel, issueTypeLabel, issueTitleLabel, severityLabel, ignoredLabel, upgradeableLabel, patchableLabel, monitoredLabel, cveLabel},
 	)
 )
 
@@ -297,7 +298,7 @@ func register(results []gaugeResult) {
 	vulnerabilityGauge.Reset()
 	for _, r := range results {
 		for _, result := range r.results {
-			vulnerabilityGauge.WithLabelValues(r.organization, r.target, r.project, r.projectType, result.id, result.issueType, result.title, result.severity, strconv.FormatBool(result.ignored), strconv.FormatBool(result.upgradeable), strconv.FormatBool(result.patchable), strconv.FormatBool(r.isMonitored)).Set(float64(result.count))
+			vulnerabilityGauge.WithLabelValues(r.organization, r.target, r.project, r.projectType, result.id, result.issueType, result.title, result.severity, strconv.FormatBool(result.ignored), strconv.FormatBool(result.upgradeable), strconv.FormatBool(result.patchable), strconv.FormatBool(r.isMonitored), result.cve).Set(float64(result.count))
 		}
 	}
 }
