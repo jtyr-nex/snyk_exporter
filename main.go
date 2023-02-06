@@ -31,6 +31,7 @@ const (
 	monitoredLabel    = "monitored"
 	targetLabel       = "target"
 	projectTypeLabel  = "project_type"
+	cveLabel          = "cve"
 )
 
 var (
@@ -39,7 +40,7 @@ var (
 			Name: "snyk_vulnerabilities_total",
 			Help: "Gauge of Snyk vulnerabilities",
 		},
-		[]string{organizationLabel, targetLabel, projectLabel, projectTypeLabel, issueIdLabel, issueTypeLabel, issueTitleLabel, severityLabel, ignoredLabel, upgradeableLabel, patchableLabel, monitoredLabel},
+		[]string{organizationLabel, targetLabel, projectLabel, projectTypeLabel, issueIdLabel, issueTypeLabel, issueTitleLabel, severityLabel, ignoredLabel, upgradeableLabel, patchableLabel, monitoredLabel, cveLabel},
 	)
 )
 
@@ -297,7 +298,7 @@ func register(results []gaugeResult) {
 	vulnerabilityGauge.Reset()
 	for _, r := range results {
 		for _, result := range r.results {
-			vulnerabilityGauge.WithLabelValues(r.organization, r.target, r.project, r.projectType, result.id, result.issueType, result.title, result.severity, strconv.FormatBool(result.ignored), strconv.FormatBool(result.upgradeable), strconv.FormatBool(result.patchable), strconv.FormatBool(r.isMonitored)).Set(float64(result.count))
+			vulnerabilityGauge.WithLabelValues(r.organization, r.target, r.project, r.projectType, result.id, result.issueType, result.title, result.severity, strconv.FormatBool(result.ignored), strconv.FormatBool(result.upgradeable), strconv.FormatBool(result.patchable), strconv.FormatBool(r.isMonitored), result.cve).Set(float64(result.count))
 		}
 	}
 }
@@ -330,8 +331,8 @@ func collect(ctx context.Context, client *client, organization org, target strin
 
 		gaugeResults = append(gaugeResults, gaugeResult{
 			organization: organization.Name,
-			//target:       strings.Split(project.Name, ":")[0],
-			target:      project.Name,
+			target:       strings.Split(project.Name, ":")[0],
+			//target:      project.Name,
 			project:     project.Name,
 			projectType: project.ProjectType,
 			results:     results,
@@ -355,6 +356,7 @@ type aggregateResult struct {
 	issueType   string
 	title       string
 	severity    string
+	cve         string
 	ignored     bool
 	upgradeable bool
 	patchable   bool
@@ -371,6 +373,11 @@ func aggregateIssues(issues []issue) []aggregateResult {
 	for _, issue := range issues {
 		aggregate, ok := aggregateResults[aggregationKey(issue)]
 		if !ok {
+			cve := ""
+			if len(issue.IssueData.Identifiers.CVE) > 0 {
+				cve = issue.IssueData.Identifiers.CVE[0]
+			}
+
 			aggregate = aggregateResult{
 				id:          issue.ID,
 				issueType:   issue.IssueType,
@@ -380,6 +387,7 @@ func aggregateIssues(issues []issue) []aggregateResult {
 				ignored:     issue.Ignored,
 				upgradeable: issue.FixInfo.Upgradeable,
 				patchable:   issue.FixInfo.Patchable,
+				cve:         cve,
 			}
 		}
 		aggregate.count++
