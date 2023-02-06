@@ -355,6 +355,7 @@ type aggregateResult struct {
 	issueType   string
 	title       string
 	severity    string
+	cve         string
 	ignored     bool
 	upgradeable bool
 	patchable   bool
@@ -371,6 +372,11 @@ func aggregateIssues(issues []issue) []aggregateResult {
 	for _, issue := range issues {
 		aggregate, ok := aggregateResults[aggregationKey(issue)]
 		if !ok {
+			cve := ""
+			if len(issue.IssueData.Identifiers.CVE) > 0 {
+				cve = issue.IssueData.Identifiers.CVE[0]
+			}
+
 			aggregate = aggregateResult{
 				id:          issue.ID,
 				issueType:   issue.IssueType,
@@ -380,6 +386,7 @@ func aggregateIssues(issues []issue) []aggregateResult {
 				ignored:     issue.Ignored,
 				upgradeable: issue.FixInfo.Upgradeable,
 				patchable:   issue.FixInfo.Patchable,
+				cve:         cve,
 			}
 		}
 		aggregate.count++

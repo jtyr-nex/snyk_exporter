@@ -154,12 +154,22 @@ type issue struct {
 	IssueData issueData `json:"issueData,omitempty"`
 	Ignored   bool      `json:"isIgnored"`
 	FixInfo   fixInfo   `json:"fixInfo,omitempty"`
+	Links     Links     `json:"links"`
 }
 
 type issueData struct {
-	ID       string `json:"id,omitempty"`
-	Title    string `json:"title,omitempty"`
-	Severity string `json:"severity,omitempty"`
+	ID          string      `json:"id,omitempty"`
+	Title       string      `json:"title,omitempty"`
+	Severity    string      `json:"severity,omitempty"`
+	Identifiers Identifiers `json:"identifiers,omitempty"`
+}
+
+type Links struct {
+	Paths string `json:"paths"`
+}
+
+type Identifiers struct {
+	CVE []string `json:"CVE"`
 }
 
 type fixInfo struct {
