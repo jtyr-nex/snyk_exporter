@@ -330,8 +330,8 @@ func collect(ctx context.Context, client *client, organization org, target strin
 
 		gaugeResults = append(gaugeResults, gaugeResult{
 			organization: organization.Name,
-			//target:       strings.Split(project.Name, ":")[0],
-			target:      project.Name,
+			target:       strings.Split(project.Name, ":")[0],
+			//target:      project.Name,
 			project:     project.Name,
 			projectType: project.ProjectType,
 			results:     results,
