@@ -56,7 +56,9 @@ var (
 
 func main() {
 	flags := kingpin.New("snyk_exporter", "Snyk exporter for Prometheus. Provide your Snyk API token and the organization(s) to scrape to expose Prometheus metrics.")
-	snykAPIURL := flags.Flag("snyk.api-url", "Snyk API URL").Default("https://snyk.io/api/v1").String()
+	snykAPIURL := flags.Flag("snyk.api-url", "Snyk API URL (legacy)").Default("https://snyk.io/api/v1").String()
+	snykRESTAPIURL := flags.Flag("snyk.rest-api-url", "Snyk REST API URL").Default("https://api.snyk.io/rest").String()
+	snykRESTAPIVersion := flags.Flag("snyk.rest-api-version", "Snyk REST API Version").Default("2023-06-22").String()
 	snykAPIToken := flags.Flag("snyk.api-token", "Snyk API token").Required().String()
 	snykInterval := flags.Flag("snyk.interval", "Polling interval for requesting data from Snyk API in seconds").Short('i').Default("600").Int()
 	snykOrganizations := flags.Flag("snyk.organization", "Snyk organization ID to scrape projects from (can be repeated for multiple organizations)").Strings()
@@ -150,7 +152,7 @@ func main() {
 		defer wg.Done()
 		log.Info("Snyk API scraper starting")
 		defer log.Info("Snyk API scraper stopped")
-		err := runAPIPolling(ctx, *snykAPIURL, *snykAPIToken, *snykOrganizations, *snykTargets, secondDuration(*snykInterval), secondDuration(*requestTimeout))
+		err := runAPIPolling(ctx, *snykAPIURL, *snykRESTAPIURL, *snykRESTAPIVersion, *snykAPIToken, *snykOrganizations, *snykTargets, secondDuration(*snykInterval), secondDuration(*requestTimeout))
 		if err != nil {
 			componentFailed <- fmt.Errorf("snyk api scraper: %w", err)
 		}
@@ -170,13 +172,15 @@ func secondDuration(seconds int) time.Duration {
 	return time.Duration(seconds) * time.Second
 }
 
-func runAPIPolling(ctx context.Context, url, token string, organizationIDs []string, targets []string, requestInterval, requestTimeout time.Duration) error {
+func runAPIPolling(ctx context.Context, url string, restUrl string, apiVersion string, token string, organizationIDs []string, targets []string, requestInterval, requestTimeout time.Duration) error {
 	client := client{
 		httpClient: &http.Client{
 			Timeout: requestTimeout,
 		},
-		token:   token,
-		baseURL: url,
+		token:         token,
+		baseLegacyUrl: url,
+		baseURL:       restUrl,
+		apiVersion:    apiVersion,
 	}
 	organizations, err := getOrganizations(&client, organizationIDs)
 	if err != nil {
@@ -319,26 +323,26 @@ func collect(ctx context.Context, client *client, organization org, target strin
 	}
 
 	var gaugeResults []gaugeResult
-	for _, project := range projects.Projects {
+	for _, project := range projects.Data {
 		start := time.Now()
 		issues, err := client.getIssues(organization.ID, project.ID)
 		duration := time.Since(start)
 		if err != nil {
-			log.Errorf("Failed to get issues for organization %s (%s) and project %s (%s): duration %v:  %v", organization.Name, organization.ID, project.Name, project.ID, duration, err)
+			log.Errorf("Failed to get issues for organization %s (%s) and project %s (%s): duration %v:  %v", organization.Name, organization.ID, project.Attributes.Name, project.ID, duration, err)
 			continue
 		}
 		results := aggregateIssues(issues.Issues)
 
 		gaugeResults = append(gaugeResults, gaugeResult{
 			organization: organization.Name,
-			target:       strings.Split(project.Name, ":")[0],
+			target:       strings.Split(project.Attributes.Name, ":")[0],
 			//target:      project.Name,
-			project:     project.Name,
-			projectType: project.ProjectType,
+			project:     project.Attributes.Name,
+			projectType: project.Attributes.Type,
 			results:     results,
-			isMonitored: project.IsMonitored,
+			isMonitored: project.Attributes.Status == "active",
 		})
-		log.Debugf("Collected data in %v for %s %s", duration, project.ID, project.Name)
+		log.Debugf("Collected data in %v for %s %s", duration, project.ID, project.Attributes.Name)
 		// stop right away in case of the context being cancelled. This ensures that
 		// we don't wait for a complete collect run for all projects before
 		// stopping.
