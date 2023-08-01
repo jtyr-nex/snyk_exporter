@@ -16,6 +16,8 @@ require (
 	gopkg.in/yaml.v3 v3.0.0-20200615113413-eeeca48fe776 // indirect
 )
 
+require github.com/guillaumeblaquiere/jsonFilter v0.3.0
+
 require (
 	github.com/alecthomas/template v0.0.0-20190718012654-fb15b899a751 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect

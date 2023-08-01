@@ -1,4 +1,47 @@
 {
+  "__inputs": [
+    {
+      "name": "DS_PROMETHEUS",
+      "label": "Prometheus",
+      "description": "",
+      "type": "datasource",
+      "pluginId": "prometheus",
+      "pluginName": "Prometheus"
+    }
+  ],
+  "__elements": {},
+  "__requires": [
+    {
+      "type": "grafana",
+      "id": "grafana",
+      "name": "Grafana",
+      "version": "10.0.2"
+    },
+    {
+      "type": "datasource",
+      "id": "prometheus",
+      "name": "Prometheus",
+      "version": "1.0.0"
+    },
+    {
+      "type": "panel",
+      "id": "stat",
+      "name": "Stat",
+      "version": ""
+    },
+    {
+      "type": "panel",
+      "id": "table",
+      "name": "Table",
+      "version": ""
+    },
+    {
+      "type": "panel",
+      "id": "timeseries",
+      "name": "Time series",
+      "version": ""
+    }
+  ],
   "annotations": {
     "list": [
       {
@@ -24,105 +67,101 @@
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 0,
-  "id": 38,
+  "id": null,
   "links": [],
   "liveNow": false,
   "panels": [
     {
       "collapsed": false,
-      "datasource": {
-        "type": "datasource",
-        "uid": "grafana"
-      },
       "gridPos": {
         "h": 1,
         "w": 24,
         "x": 0,
         "y": 0
       },
-      "id": 83,
+      "id": 203,
       "panels": [],
-      "targets": [
-        {
-          "datasource": {
-            "type": "datasource",
-            "uid": "grafana"
-          },
-          "refId": "A"
-        }
-      ],
-      "title": "Dashboard Row",
+      "title": "Summary",
       "type": "row"
     },
     {
-      "columns": [],
       "datasource": {
-        "uid": "grafanacloud-secdev-prom"
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
       },
-      "fontSize": "100%",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "color-background"
+            },
+            "inspect": false
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "transparent",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Value"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 150
+              }
+            ]
+          }
+        ]
+      },
       "gridPos": {
         "h": 8,
         "w": 24,
         "x": 0,
         "y": 1
       },
-      "height": "300px",
       "id": 82,
       "links": [],
-      "scroll": true,
-      "showHeader": true,
-      "sort": {
-        "col": 2,
-        "desc": true
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "countRows": false,
+          "fields": "",
+          "reducer": [
+            "sum"
+          ],
+          "show": false
+        },
+        "showHeader": true,
+        "sortBy": [
+          {
+            "desc": true,
+            "displayName": "Total vulnerabilities"
+          }
+        ]
       },
-      "styles": [
-        {
-          "alias": "Time",
-          "align": "auto",
-          "dateFormat": "YYYY-MM-DD HH:mm:ss",
-          "pattern": "Time",
-          "type": "hidden"
-        },
-        {
-          "alias": "Total Vulnerabilities",
-          "align": "auto",
-          "colorMode": "row",
-          "colors": [
-            "rgba(50, 172, 45, 0.97)",
-            "rgba(237, 129, 40, 0.89)",
-            "rgba(245, 54, 54, 0.9)"
-          ],
-          "dateFormat": "YYYY-MM-DD HH:mm:ss",
-          "decimals": 0,
-          "pattern": "Value",
-          "thresholds": [
-            "1",
-            "5"
-          ],
-          "type": "number",
-          "unit": "short"
-        },
-        {
-          "alias": "",
-          "align": "auto",
-          "colors": [
-            "rgba(245, 54, 54, 0.9)",
-            "rgba(237, 129, 40, 0.89)",
-            "rgba(50, 172, 45, 0.97)"
-          ],
-          "decimals": 2,
-          "pattern": "/.*/",
-          "thresholds": [],
-          "type": "number",
-          "unit": "short"
-        }
-      ],
+      "pluginVersion": "10.0.2",
       "targets": [
         {
           "datasource": {
-            "uid": "grafanacloud-secdev-prom"
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "sum(snyk_vulnerabilities_total) by (project)",
+          "editorMode": "code",
+          "expr": "sum(snyk_vulnerabilities_total{project=~\"$project\"}) by (project)",
           "format": "table",
           "instant": true,
           "interval": "",
@@ -131,9 +170,24 @@
           "refId": "A"
         }
       ],
-      "title": "Total Vulnerabilities per Project",
-      "transform": "table",
-      "type": "table-old"
+      "title": "Total vulnerabilities per project",
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true
+            },
+            "indexByName": {},
+            "renameByName": {
+              "Value": "Total vulnerabilities",
+              "project": "Project",
+              "severity": "Severity"
+            }
+          }
+        }
+      ],
+      "type": "table"
     },
     {
       "collapsed": false,
@@ -149,7 +203,8 @@
       },
       "id": 84,
       "panels": [],
-      "repeat": "Project",
+      "repeat": "project",
+      "repeatDirection": "h",
       "targets": [
         {
           "datasource": {
@@ -159,12 +214,163 @@
           "refId": "A"
         }
       ],
-      "title": "$Project",
+      "title": "$project",
       "type": "row"
     },
     {
       "datasource": {
-        "uid": "grafanacloud-secdev-prom"
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 70,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": true,
+            "stacking": {
+              "group": "A",
+              "mode": "normal"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "high"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#bf1b00",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "low"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#447ebc",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "medium"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#c15c17",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 11,
+        "w": 16,
+        "x": 0,
+        "y": 10
+      },
+      "id": 1,
+      "links": [],
+      "options": {
+        "legend": {
+          "calcs": [
+            "min",
+            "max",
+            "mean",
+            "lastNotNull"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "pluginVersion": "10.0.2",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "editorMode": "code",
+          "expr": "sum by(severity) (snyk_vulnerabilities_total{project=~\"$project\"})",
+          "format": "time_series",
+          "interval": "",
+          "intervalFactor": 2,
+          "legendFormat": "{{severity}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Issue count",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
       },
       "fieldConfig": {
         "defaults": {
@@ -173,26 +379,21 @@
               "options": {
                 "match": "null",
                 "result": {
-                  "text": "N/A"
+                  "index": 0,
+                  "text": "0"
                 }
               },
               "type": "special"
             }
           ],
+          "min": 0,
+          "noValue": "0",
           "thresholds": {
             "mode": "absolute",
             "steps": [
               {
-                "color": "rgba(41, 156, 70, 0)",
+                "color": "dark-red",
                 "value": null
-              },
-              {
-                "color": "rgba(137, 15, 2, 0.49)",
-                "value": 1
-              },
-              {
-                "color": "#d44a3a",
-                "value": 5
               }
             ]
           },
@@ -201,16 +402,16 @@
         "overrides": []
       },
       "gridPos": {
-        "h": 7,
+        "h": 3,
         "w": 2,
-        "x": 0,
+        "x": 16,
         "y": 10
       },
-      "id": 3,
+      "id": 139,
       "links": [],
       "maxDataPoints": 100,
       "options": {
-        "colorMode": "background",
+        "colorMode": "background_solid",
         "graphMode": "none",
         "justifyMode": "auto",
         "orientation": "horizontal",
@@ -223,13 +424,90 @@
         },
         "textMode": "auto"
       },
-      "pluginVersion": "9.1.6-10b38e80",
+      "pluginVersion": "10.0.2",
       "targets": [
         {
           "datasource": {
-            "uid": "grafanacloud-secdev-prom"
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "sum(snyk_vulnerabilities_total{severity=\"high\", project=\"$Project\"})",
+          "editorMode": "code",
+          "expr": "sum(snyk_vulnerabilities_total{severity=\"critical\", project=~\"$project\"})",
+          "format": "time_series",
+          "interval": "",
+          "intervalFactor": 2,
+          "legendFormat": "",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Critical",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            {
+              "options": {
+                "match": "null",
+                "result": {
+                  "index": 0,
+                  "text": "0"
+                }
+              },
+              "type": "special"
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "dark-orange",
+                "value": null
+              }
+            ]
+          },
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 3,
+        "w": 2,
+        "x": 18,
+        "y": 10
+      },
+      "id": 3,
+      "links": [],
+      "maxDataPoints": 100,
+      "options": {
+        "colorMode": "background_solid",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "pluginVersion": "10.0.2",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "editorMode": "code",
+          "expr": "sum(snyk_vulnerabilities_total{severity=\"high\", project=~\"$project\"})",
           "format": "time_series",
           "instant": false,
           "interval": "",
@@ -243,7 +521,8 @@
     },
     {
       "datasource": {
-        "uid": "grafanacloud-secdev-prom"
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
       },
       "fieldConfig": {
         "defaults": {
@@ -252,7 +531,8 @@
               "options": {
                 "match": "null",
                 "result": {
-                  "text": "N/A"
+                  "index": 0,
+                  "text": "0"
                 }
               },
               "type": "special"
@@ -262,16 +542,8 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "rgba(41, 156, 70, 0)",
+                "color": "dark-yellow",
                 "value": null
-              },
-              {
-                "color": "rgba(193, 92, 23, 0.49)",
-                "value": 1
-              },
-              {
-                "color": "#c15c17",
-                "value": 5
               }
             ]
           },
@@ -280,16 +552,16 @@
         "overrides": []
       },
       "gridPos": {
-        "h": 7,
+        "h": 3,
         "w": 2,
-        "x": 2,
+        "x": 20,
         "y": 10
       },
       "id": 4,
       "links": [],
       "maxDataPoints": 100,
       "options": {
-        "colorMode": "background",
+        "colorMode": "background_solid",
         "graphMode": "none",
         "justifyMode": "auto",
         "orientation": "horizontal",
@@ -302,17 +574,20 @@
         },
         "textMode": "auto"
       },
-      "pluginVersion": "9.1.6-10b38e80",
+      "pluginVersion": "10.0.2",
       "targets": [
         {
           "datasource": {
-            "uid": "grafanacloud-secdev-prom"
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "sum(snyk_vulnerabilities_total{severity=\"medium\", project=\"$Project\"})",
+          "editorMode": "code",
+          "expr": "sum(snyk_vulnerabilities_total{severity=\"medium\", project=~\"$project\"})",
           "format": "time_series",
           "interval": "",
           "intervalFactor": 2,
           "legendFormat": "",
+          "range": true,
           "refId": "A"
         }
       ],
@@ -321,7 +596,8 @@
     },
     {
       "datasource": {
-        "uid": "grafanacloud-secdev-prom"
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
       },
       "fieldConfig": {
         "defaults": {
@@ -330,7 +606,8 @@
               "options": {
                 "match": "null",
                 "result": {
-                  "text": "N/A"
+                  "index": 0,
+                  "text": "0"
                 }
               },
               "type": "special"
@@ -340,16 +617,8 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "rgba(41, 156, 70, 0)",
+                "color": "dark-blue",
                 "value": null
-              },
-              {
-                "color": "rgba(10, 67, 124, 0.51)",
-                "value": 1
-              },
-              {
-                "color": "#0a437c",
-                "value": 5
               }
             ]
           },
@@ -358,16 +627,16 @@
         "overrides": []
       },
       "gridPos": {
-        "h": 7,
+        "h": 3,
         "w": 2,
-        "x": 4,
+        "x": 22,
         "y": 10
       },
       "id": 5,
       "links": [],
       "maxDataPoints": 100,
       "options": {
-        "colorMode": "background",
+        "colorMode": "background_solid",
         "graphMode": "none",
         "justifyMode": "auto",
         "orientation": "horizontal",
@@ -380,17 +649,20 @@
         },
         "textMode": "auto"
       },
-      "pluginVersion": "9.1.6-10b38e80",
+      "pluginVersion": "10.0.2",
       "targets": [
         {
           "datasource": {
-            "uid": "grafanacloud-secdev-prom"
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "sum(snyk_vulnerabilities_total{severity=\"low\", project=\"$Project\"})",
+          "editorMode": "code",
+          "expr": "sum(snyk_vulnerabilities_total{severity=\"low\", project=~\"$project\"})",
           "format": "time_series",
           "interval": "",
           "intervalFactor": 2,
           "legendFormat": "",
+          "range": true,
           "refId": "A"
         }
       ],
@@ -399,316 +671,122 @@
     },
     {
       "datasource": {
-        "uid": "grafanacloud-secdev-prom"
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
       },
       "fieldConfig": {
         "defaults": {
+          "color": {
+            "fixedColor": "transparent",
+            "mode": "fixed"
+          },
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "mode": "basic",
+              "type": "color-background"
+            },
+            "inspect": false
+          },
           "mappings": [
             {
               "options": {
-                "match": "null",
-                "result": {
-                  "text": "N/A"
+                "critical": {
+                  "color": "dark-red",
+                  "index": 0,
+                  "text": "Critical"
+                },
+                "high": {
+                  "color": "dark-orange",
+                  "index": 1,
+                  "text": "High"
+                },
+                "low": {
+                  "color": "dark-blue",
+                  "index": 3,
+                  "text": "Low"
+                },
+                "medium": {
+                  "color": "dark-yellow",
+                  "index": 2,
+                  "text": "Medium"
                 }
               },
-              "type": "special"
+              "type": "value"
             }
           ],
           "thresholds": {
             "mode": "absolute",
             "steps": [
               {
-                "color": "rgba(41, 156, 70, 0)",
+                "color": "transparent",
                 "value": null
-              },
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Severity"
+            },
+            "properties": [
               {
-                "color": "rgba(10, 67, 124, 0.51)",
-                "value": 1
-              },
-              {
-                "color": "#0a437c",
-                "value": 5
+                "id": "custom.width",
+                "value": 75
               }
             ]
           },
-          "unit": "none"
-        },
-        "overrides": []
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Value"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 75
+              }
+            ]
+          }
+        ]
       },
       "gridPos": {
-        "h": 7,
-        "w": 2,
-        "x": 6,
-        "y": 10
-      },
-      "id": 139,
-      "links": [],
-      "maxDataPoints": 100,
-      "options": {
-        "colorMode": "background",
-        "graphMode": "none",
-        "justifyMode": "auto",
-        "orientation": "horizontal",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "textMode": "auto"
-      },
-      "pluginVersion": "9.1.6-10b38e80",
-      "targets": [
-        {
-          "datasource": {
-            "uid": "grafanacloud-secdev-prom"
-          },
-          "expr": "sum(snyk_vulnerabilities_total{ignored=\"true\", project=\"$Project\"})",
-          "format": "time_series",
-          "interval": "",
-          "intervalFactor": 2,
-          "legendFormat": "",
-          "refId": "A"
-        }
-      ],
-      "title": "Ignored",
-      "type": "stat"
-    },
-    {
-      "aliasColors": {
-        "high": "#bf1b00",
-        "low": "#447ebc",
-        "medium": "#c15c17"
-      },
-      "bars": false,
-      "dashLength": 10,
-      "dashes": false,
-      "datasource": {
-        "uid": "grafanacloud-secdev-prom"
-      },
-      "fill": 7,
-      "fillGradient": 0,
-      "gridPos": {
-        "h": 7,
-        "w": 8,
-        "x": 8,
-        "y": 10
-      },
-      "height": "",
-      "hiddenSeries": false,
-      "id": 1,
-      "legend": {
-        "alignAsTable": false,
-        "avg": false,
-        "current": false,
-        "max": false,
-        "min": false,
-        "show": true,
-        "sortDesc": true,
-        "total": false,
-        "values": false
-      },
-      "lines": true,
-      "linewidth": 1,
-      "links": [],
-      "nullPointMode": "connected",
-      "options": {
-        "alertThreshold": true
-      },
-      "percentage": false,
-      "pluginVersion": "9.1.6-10b38e80",
-      "pointradius": 5,
-      "points": false,
-      "renderer": "flot",
-      "seriesOverrides": [],
-      "spaceLength": 10,
-      "stack": true,
-      "steppedLine": false,
-      "targets": [
-        {
-          "datasource": {
-            "uid": "grafanacloud-secdev-prom"
-          },
-          "expr": "sum by(severity) (snyk_vulnerabilities_total{project=~\"$Project\"})",
-          "format": "time_series",
-          "interval": "",
-          "intervalFactor": 2,
-          "legendFormat": "{{severity}}",
-          "refId": "A"
-        }
-      ],
-      "thresholds": [],
-      "timeRegions": [],
-      "title": "Issue Count History",
-      "tooltip": {
-        "shared": true,
-        "sort": 0,
-        "value_type": "individual"
-      },
-      "type": "graph",
-      "xaxis": {
-        "mode": "time",
-        "show": true,
-        "values": []
-      },
-      "yaxes": [
-        {
-          "format": "short",
-          "logBase": 1,
-          "min": "0",
-          "show": true
-        },
-        {
-          "format": "short",
-          "logBase": 1,
-          "show": true
-        }
-      ],
-      "yaxis": {
-        "align": false
-      }
-    },
-    {
-      "columns": [],
-      "datasource": {
-        "uid": "grafanacloud-secdev-prom"
-      },
-      "fontSize": "100%",
-      "gridPos": {
-        "h": 7,
+        "h": 8,
         "w": 8,
         "x": 16,
-        "y": 10
+        "y": 13
       },
       "id": 81,
       "links": [],
-      "scroll": true,
-      "showHeader": true,
-      "sort": {
-        "col": 2,
-        "desc": true
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "countRows": false,
+          "fields": "",
+          "reducer": [
+            "sum"
+          ],
+          "show": false
+        },
+        "showHeader": true,
+        "sortBy": [
+          {
+            "desc": false,
+            "displayName": "Severity"
+          }
+        ]
       },
-      "styles": [
-        {
-          "alias": "Time",
-          "align": "auto",
-          "dateFormat": "YYYY-MM-DD HH:mm:ss",
-          "pattern": "Time",
-          "type": "hidden"
-        },
-        {
-          "alias": "",
-          "align": "auto",
-          "colors": [
-            "rgba(245, 54, 54, 0.9)",
-            "rgba(237, 129, 40, 0.89)",
-            "rgba(50, 172, 45, 0.97)"
-          ],
-          "dateFormat": "YYYY-MM-DD HH:mm:ss",
-          "decimals": 2,
-          "pattern": "__name__",
-          "thresholds": [],
-          "type": "hidden",
-          "unit": "short"
-        },
-        {
-          "alias": "",
-          "align": "auto",
-          "colors": [
-            "rgba(245, 54, 54, 0.9)",
-            "rgba(237, 129, 40, 0.89)",
-            "rgba(50, 172, 45, 0.97)"
-          ],
-          "dateFormat": "YYYY-MM-DD HH:mm:ss",
-          "decimals": 2,
-          "pattern": "instance",
-          "thresholds": [],
-          "type": "hidden",
-          "unit": "short"
-        },
-        {
-          "alias": "",
-          "align": "auto",
-          "colors": [
-            "rgba(245, 54, 54, 0.9)",
-            "rgba(237, 129, 40, 0.89)",
-            "rgba(50, 172, 45, 0.97)"
-          ],
-          "dateFormat": "YYYY-MM-DD HH:mm:ss",
-          "decimals": 2,
-          "pattern": "job",
-          "thresholds": [],
-          "type": "hidden",
-          "unit": "short"
-        },
-        {
-          "alias": "",
-          "align": "auto",
-          "colors": [
-            "rgba(245, 54, 54, 0.9)",
-            "rgba(237, 129, 40, 0.89)",
-            "rgba(50, 172, 45, 0.97)"
-          ],
-          "dateFormat": "YYYY-MM-DD HH:mm:ss",
-          "decimals": 2,
-          "pattern": "project",
-          "thresholds": [],
-          "type": "hidden",
-          "unit": "short"
-        },
-        {
-          "alias": "Count",
-          "align": "auto",
-          "colors": [
-            "rgba(245, 54, 54, 0.9)",
-            "rgba(237, 129, 40, 0.89)",
-            "rgba(50, 172, 45, 0.97)"
-          ],
-          "dateFormat": "YYYY-MM-DD HH:mm:ss",
-          "decimals": 0,
-          "pattern": "Value",
-          "thresholds": [],
-          "type": "number",
-          "unit": "none"
-        },
-        {
-          "alias": "",
-          "align": "auto",
-          "colors": [
-            "rgba(245, 54, 54, 0.9)",
-            "rgba(237, 129, 40, 0.89)",
-            "rgba(50, 172, 45, 0.97)"
-          ],
-          "dateFormat": "YYYY-MM-DD HH:mm:ss",
-          "decimals": 2,
-          "mappingType": 1,
-          "pattern": "",
-          "thresholds": [],
-          "type": "number",
-          "unit": "short"
-        },
-        {
-          "alias": "Title",
-          "align": "auto",
-          "colors": [
-            "rgba(245, 54, 54, 0.9)",
-            "rgba(237, 129, 40, 0.89)",
-            "rgba(50, 172, 45, 0.97)"
-          ],
-          "decimals": 2,
-          "pattern": "issue_title",
-          "thresholds": [],
-          "type": "number",
-          "unit": "short"
-        }
-      ],
+      "pluginVersion": "10.0.2",
       "targets": [
         {
           "datasource": {
-            "uid": "grafanacloud-secdev-prom"
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "sum(snyk_vulnerabilities_total{project=\"$Project\"}) by (issue_title)",
+          "editorMode": "code",
+          "expr": "sum(snyk_vulnerabilities_total{project=~\"$project\"}) by (issue_title, severity)",
           "format": "table",
           "instant": true,
           "interval": "",
@@ -717,39 +795,69 @@
           "refId": "A"
         }
       ],
-      "title": "Issues by Type",
-      "transform": "table",
-      "type": "table-old"
+      "title": "Issues by type",
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true
+            },
+            "indexByName": {},
+            "renameByName": {
+              "Value": "Count",
+              "issue_title": "Title",
+              "severity": "Severity"
+            }
+          }
+        }
+      ],
+      "type": "table"
     }
   ],
-  "refresh": "",
-  "schemaVersion": 37,
+  "refresh": "5m",
+  "schemaVersion": 38,
   "style": "dark",
   "tags": [],
   "templating": {
     "list": [
       {
         "current": {
-          "selected": true,
-          "tags": [],
-          "text": [
-            "All"
-          ],
-          "value": [
-            "$__all"
-          ]
+          "selected": false,
+          "text": "default",
+          "value": "default"
         },
+        "hide": 0,
+        "includeAll": false,
+        "label": "Datasource",
+        "multi": false,
+        "name": "datasource",
+        "options": [],
+        "query": "prometheus",
+        "queryValue": "",
+        "refresh": 1,
+        "regex": "",
+        "skipUrlSync": false,
+        "type": "datasource"
+      },
+      {
+        "current": {},
         "datasource": {
-          "uid": "grafanacloud-secdev-prom"
+          "type": "prometheus",
+          "uid": "${DS_PROMETHEUS}"
         },
         "definition": "query_result(topk(10, sort_desc(sum(snyk_vulnerabilities_total) by (project))))",
         "hide": 0,
         "includeAll": true,
+        "label": "Project",
         "multi": true,
-        "name": "Project",
+        "name": "project",
         "options": [],
-        "query": "query_result(topk(10, sort_desc(sum(snyk_vulnerabilities_total) by (project))))",
-        "refresh": 1,
+        "query": {
+          "query": "query_result(topk(10, sort_desc(sum(snyk_vulnerabilities_total) by (project))))",
+          "refId": "PrometheusVariableQueryEditor-VariableQuery"
+        },
+        "refresh": 2,
         "regex": ".*project=\"(.*)\".*",
         "skipUrlSync": false,
         "sort": 0,
@@ -761,7 +869,7 @@
     ]
   },
   "time": {
-    "from": "now-30m",
+    "from": "now-1h",
     "to": "now"
   },
   "timepicker": {
@@ -790,8 +898,8 @@
     ]
   },
   "timezone": "",
-  "title": "Snyk Dashboard",
-  "uid": "SwnPHSLGz",
-  "version": 1,
+  "title": "Snyk Exporter",
+  "uid": "a3565fa5-3e33-41ad-9456-d2045b145a30",
+  "version": 2,
   "weekStart": ""
 }
