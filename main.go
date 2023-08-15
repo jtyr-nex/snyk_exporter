@@ -59,10 +59,12 @@ func main() {
 	snykAPIURL := flags.Flag("snyk.api-url", "Snyk API URL (legacy)").Default("https://snyk.io/api/v1").String()
 	snykRESTAPIURL := flags.Flag("snyk.rest-api-url", "Snyk REST API URL").Default("https://api.snyk.io/rest").String()
 	snykRESTAPIVersion := flags.Flag("snyk.rest-api-version", "Snyk REST API Version").Default("2023-06-22").String()
-	snykAPIToken := flags.Flag("snyk.api-token", "Snyk API token").Required().String()
+	snykAPIToken := flags.Flag("snyk.api-token", "Snyk API token").Required().OverrideDefaultFromEnvar("SNYK_API_TOKEN").String()
 	snykInterval := flags.Flag("snyk.interval", "Polling interval for requesting data from Snyk API in seconds").Short('i').Default("600").Int()
 	snykOrganizations := flags.Flag("snyk.organization", "Snyk organization ID to scrape projects from (can be repeated for multiple organizations)").Strings()
 	snykTargets := flags.Flag("snyk.target", "Snyk target/repo name to scrape projects from (can be repeated for multiple targets)").Strings()
+	snykOrigins := flags.Flag("snyk.origin", "Snyk project origin (can be repeated for multiple origins)").Strings()
+	snykProjectFilter := flags.Flag("snyk.project-filter", "Project filter (e.g. attributes.imageCluster=mycluster).").String()
 	requestTimeout := flags.Flag("snyk.timeout", "Timeout for requests against Snyk API").Default("10").Int()
 	listenAddress := flags.Flag("web.listen-address", "Address on which to expose metrics.").Default(":9532").String()
 	log.AddFlags(flags)
@@ -80,6 +82,12 @@ func main() {
 		log.Infof("Starting Snyk exporter for targets '%s'", strings.Join(*snykTargets, ","))
 	} else {
 		log.Info("Starting Snyk exporter for all targets")
+	}
+
+	if len(*snykOrigins) != 0 {
+		log.Infof("Starting Snyk exporter for origins '%s'", strings.Join(*snykOrigins, ","))
+	} else {
+		log.Info("Starting Snyk exporter for all origins")
 	}
 
 	prometheus.MustRegister(vulnerabilityGauge)
@@ -152,7 +160,7 @@ func main() {
 		defer wg.Done()
 		log.Info("Snyk API scraper starting")
 		defer log.Info("Snyk API scraper stopped")
-		err := runAPIPolling(ctx, *snykAPIURL, *snykRESTAPIURL, *snykRESTAPIVersion, *snykAPIToken, *snykOrganizations, *snykTargets, secondDuration(*snykInterval), secondDuration(*requestTimeout))
+		err := runAPIPolling(ctx, *snykAPIURL, *snykRESTAPIURL, *snykRESTAPIVersion, *snykAPIToken, *snykOrganizations, *snykTargets, *snykOrigins, *snykProjectFilter, secondDuration(*snykInterval), secondDuration(*requestTimeout))
 		if err != nil {
 			componentFailed <- fmt.Errorf("snyk api scraper: %w", err)
 		}
@@ -172,7 +180,7 @@ func secondDuration(seconds int) time.Duration {
 	return time.Duration(seconds) * time.Second
 }
 
-func runAPIPolling(ctx context.Context, url string, restUrl string, apiVersion string, token string, organizationIDs []string, targets []string, requestInterval, requestTimeout time.Duration) error {
+func runAPIPolling(ctx context.Context, url string, restUrl string, apiVersion string, token string, organizationIDs []string, targets []string, origins []string, projectFilter string, requestInterval, requestTimeout time.Duration) error {
 	client := client{
 		httpClient: &http.Client{
 			Timeout: requestTimeout,
@@ -189,7 +197,7 @@ func runAPIPolling(ctx context.Context, url string, restUrl string, apiVersion s
 	log.Infof("Running Snyk API scraper for organizations: %v", strings.Join(organizationNames(organizations), ", "))
 
 	// kick off a poll right away to get metrics available right after startup
-	pollOrgsAndTargets(organizations, targets, ctx, client)
+	pollOrgsAndTargets(organizations, targets, origins, projectFilter, ctx, client)
 
 	ticker := time.NewTicker(requestInterval)
 	defer ticker.Stop()
@@ -198,22 +206,22 @@ func runAPIPolling(ctx context.Context, url string, restUrl string, apiVersion s
 		case <-ctx.Done():
 			return nil
 		case <-ticker.C:
-			pollOrgsAndTargets(organizations, targets, ctx, client)
+			pollOrgsAndTargets(organizations, targets, origins, projectFilter, ctx, client)
 		}
 	}
 }
 
 // loop through provided orgs and targets
-func pollOrgsAndTargets(organizations []org, targets []string, ctx context.Context, client client) {
+func pollOrgsAndTargets(organizations []org, targets []string, origins []string, projectFilter string, ctx context.Context, client client) {
 	var gaugeResults []gaugeResult
 	for _, organization := range organizations {
 		log.Infof("Collecting for organization '%s'", organization.Name)
 		if len(targets) == 0 {
-			gaugeResults = pollAPI(ctx, &client, organization, "", gaugeResults)
+			gaugeResults = pollAPI(ctx, &client, organization, "", origins, projectFilter, gaugeResults)
 		} else {
 			for _, target := range targets {
 				log.Infof("Collecting for target starting with '%s'", target)
-				gaugeResults = pollAPI(ctx, &client, organization, target, gaugeResults)
+				gaugeResults = pollAPI(ctx, &client, organization, target, origins, projectFilter, gaugeResults)
 			}
 		}
 	}
@@ -232,9 +240,9 @@ func registerMetrics(gaugeResults []gaugeResult) {
 
 // pollAPI collects data from provided organizations and registers them in the
 // prometheus registry.
-func pollAPI(ctx context.Context, client *client, organization org, target string, gaugeResults []gaugeResult) []gaugeResult {
+func pollAPI(ctx context.Context, client *client, organization org, target string, origins []string, projectFilter string, gaugeResults []gaugeResult) []gaugeResult {
 	//var gaugeResults []gaugeResult
-	results, err := collect(ctx, client, organization, target)
+	results, err := collect(ctx, client, organization, target, origins, projectFilter)
 	if err != nil {
 		log.With("error", err).
 			With("organzationName", organization.Name).
@@ -316,8 +324,8 @@ type gaugeResult struct {
 	results      []aggregateResult
 }
 
-func collect(ctx context.Context, client *client, organization org, target string) ([]gaugeResult, error) {
-	projects, err := client.getProjects(organization.ID, target)
+func collect(ctx context.Context, client *client, organization org, target string, origins []string, projectFilter string) ([]gaugeResult, error) {
+	projects, err := client.getProjects(organization.ID, target, origins, projectFilter)
 	if err != nil {
 		return nil, fmt.Errorf("get projects for organization: %w", err)
 	}

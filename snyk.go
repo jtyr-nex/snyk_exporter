@@ -7,7 +7,9 @@ import (
 	"io/ioutil"
 	"net/http"
 	"net/http/httputil"
+	"strings"
 
+	"github.com/guillaumeblaquiere/jsonFilter"
 	"github.com/prometheus/common/log"
 )
 
@@ -36,7 +38,7 @@ func (c *client) getOrganizations() (orgsResponse, error) {
 	return orgs, nil
 }
 
-func (c *client) getProjects(organizationID string, target string) (projectsResponse, error) {
+func (c *client) getProjects(organizationID string, target string, origins []string, projectFilter string) (projectsResponse, error) {
 	var reader bytes.Buffer
 
 	req, err := http.NewRequest(http.MethodGet, fmt.Sprintf("%s/orgs/%s/projects", c.baseURL, organizationID), &reader)
@@ -50,6 +52,9 @@ func (c *client) getProjects(organizationID string, target string) (projectsResp
 	if len(target) != 0 {
 		q.Add("names", target)
 	}
+	if len(origins) != 0 {
+		q.Add("origins", strings.Join(origins, ","))
+	}
 	req.URL.RawQuery = q.Encode()
 
 	log.Debugf("Fetching Projects...")
@@ -62,6 +67,14 @@ func (c *client) getProjects(organizationID string, target string) (projectsResp
 	err = json.NewDecoder(response.Body).Decode(&allProjects)
 	if err != nil {
 		return projectsResponse{}, err
+	}
+
+	filter := jsonFilter.Filter{}
+	if projectFilter != "" {
+		err = filter.Init(projectFilter, project{})
+		if err != nil {
+			return projectsResponse{}, err
+		}
 	}
 
 	for {
@@ -86,6 +99,14 @@ func (c *client) getProjects(organizationID string, target string) (projectsResp
 		err = json.NewDecoder(response.Body).Decode(&projects)
 		if err != nil {
 			return projectsResponse{}, err
+		}
+
+		if projectFilter != "" {
+			ret, err := filter.ApplyFilter(projects.Data)
+			if err != nil {
+				return projectsResponse{}, err
+			}
+			projects.Data = ret.([]project)
 		}
 
 		allProjects.Data = append(allProjects.Data, projects.Data...)
@@ -197,6 +218,7 @@ type projectAttributes struct {
 	Lifecycle           []string        `json:"lifecycle,omitempty"`
 	Tags                []projectTag    `json:"tags,omitempty"`
 	Settings            projectSettings `json:"settings,omitempty"`
+	ImageCluster        string          `json:"imageCluster,omitempty"`
 }
 
 type projectTag struct {
