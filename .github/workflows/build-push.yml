@@ -2,7 +2,7 @@ name: Docker Build and Push
 
 on:
   release:
-    types: [published]
+    types: [created]
   workflow_dispatch:
 
 jobs:
@@ -30,4 +30,4 @@ jobs:
         with:
           context: .
           push: true
-          tags: grafana/snyk_exporter:${{ vars.GITHUB_REF }}
+          tags: grafana/snyk_exporter:${{ GITHUB_REF }}
